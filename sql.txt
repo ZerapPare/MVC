@@ -1,0 +1,113 @@
+-- @D:\mvcc.txt
+
+CREATE TABLE Students (
+  student_id      CHAR(8)        PRIMARY KEY,
+  title           VARCHAR2(10),
+  first_name      VARCHAR2(50),
+  last_name       VARCHAR2(50),
+  birth_date      DATE,
+  school          VARCHAR2(100),
+  email           VARCHAR2(100),
+  curriculum_code VARCHAR2(10),
+  CONSTRAINT ck_stu_prefix CHECK (SUBSTR(student_id,1,2) = '69')
+);
+
+-- Subjects (มี self-FK เป็นวิชาบังคับก่อน)
+CREATE TABLE Subjects (
+  subject_code     CHAR(8)         PRIMARY KEY,
+  name             VARCHAR2(100)   NOT NULL,
+  credit           NUMBER(2)       NOT NULL,
+  lecturer         VARCHAR2(100),
+  prereq_code      CHAR(8),
+  max_seats        NUMBER(3),
+  curriculum_code  VARCHAR2(10),
+  CONSTRAINT ck_subj_prefix CHECK (SUBSTR(subject_code,1,4) IN ('0550','9069')),
+  CONSTRAINT ck_credit_pos  CHECK (credit > 0)
+);
+
+ALTER TABLE Subjects
+  ADD CONSTRAINT fk_subj_prereq
+  FOREIGN KEY (prereq_code) REFERENCES Subjects(subject_code);
+
+-- RegisteredSubject (M:N)
+CREATE TABLE RegisteredSubject (
+  id            NUMBER        PRIMARY KEY,
+  student_id    CHAR(8)       NOT NULL,
+  subject_code  CHAR(8)       NOT NULL,
+  acad_year     NUMBER(4)     NOT NULL,
+  semester      NUMBER(1)     NOT NULL,
+  grade         VARCHAR2(2),
+  CONSTRAINT unq_reg UNIQUE (student_id, subject_code, acad_year, semester),
+  CONSTRAINT fk_reg_student FOREIGN KEY (student_id)   REFERENCES Students(student_id),
+  CONSTRAINT fk_reg_subject FOREIGN KEY (subject_code) REFERENCES Subjects(subject_code),
+  CONSTRAINT ck_sem CHECK (semester IN (1,2,3))
+);
+
+-- Sequence + Trigger สำหรับ id
+CREATE SEQUENCE seq_reg_id START WITH 1 INCREMENT BY 1 NOCACHE;
+
+CREATE OR REPLACE TRIGGER trg_reg_id
+BEFORE INSERT ON RegisteredSubject
+FOR EACH ROW
+WHEN (NEW.id IS NULL)
+BEGIN
+  :NEW.id := seq_reg_id.NEXTVAL;
+END;
+/
+-- ตรวจทริกเกอร์
+ALTER TRIGGER trg_reg_id COMPILE;
+SHOW ERRORS TRIGGER trg_reg_id;
+
+------------------------------------------------------------------------
+-- 2) INSERT DATA ให้ตรงกับ DataStore
+------------------------------------------------------------------------
+SET DEFINE OFF;  -- กัน & ในชื่อวิชา
+
+------------------------------------------------------------------------
+-- 1) DataStore
+------------------------------------------------------------------------
+SET DEFINE OFF; 
+
+-- Students (10 คน)
+INSERT INTO Students VALUES ('69000001','Mr.','Alpha','One',   DATE '2008-01-01','ABC High','alpha@mail.com','CS1');
+INSERT INTO Students VALUES ('69000002','Ms.','Beta','Two',    DATE '2007-05-15','XYZ School','beta@mail.com','CS1');
+INSERT INTO Students VALUES ('69000003','Mr.','Gamma','Three', DATE '2006-11-20','LMN School','gamma@mail.com','GN1');
+INSERT INTO Students VALUES ('69000004','Ms.','Delta','Four',  DATE '2008-03-10','ABC High','delta@mail.com','CS1');
+INSERT INTO Students VALUES ('69000005','Mr.','Epsilon','Five',DATE '2007-07-07','XYZ School','eps@mail.com','GN1');
+INSERT INTO Students VALUES ('69000006','Ms.','Zeta','Six',    DATE '2008-09-09','KLM High','zeta@mail.com','GN1');
+INSERT INTO Students VALUES ('69000007','Mr.','Eta','Seven',   DATE '2007-02-02','KLM High','eta@mail.com','CS1');
+INSERT INTO Students VALUES ('69000008','Ms.','Theta','Eight', DATE '2008-12-12','NOP School','theta@mail.com','CS1');
+INSERT INTO Students VALUES ('69000009','Mr.','Iota','Nine',   DATE '2007-10-25','NOP School','iota@mail.com','GN1');
+INSERT INTO Students VALUES ('69000010','Ms.','Kappa','Ten',   DATE '2006-08-18','QRS School','kappa@mail.com','CS1');
+
+-- Subjects (12 ตัว ตามรหัส/ชื่อ/ที่นั่ง/สาย prereq)
+-- CS1 chain: 05506001 -> 05506002 -> 05506003 + อื่น ๆ
+INSERT INTO Subjects VALUES ('05506001','CS1-Programming I',               3,'Dr.A', NULL,       30,'CS1');
+INSERT INTO Subjects VALUES ('05506002','CS1-Programming II',              3,'Dr.A','05506001',  30,'CS1');
+INSERT INTO Subjects VALUES ('05506003','CS1-Data Structures',             3,'Dr.B','05506002',  30,'CS1');
+INSERT INTO Subjects VALUES ('05506231','CS1-Statistics & Probability',    3,'Dr.C', NULL,       40,'CS1');
+INSERT INTO Subjects VALUES ('05506232','CS1-Discrete Math',               3,'Dr.C', NULL,       40,'CS1');
+INSERT INTO Subjects VALUES ('05506010','CS1-Web Technology',              3,'Dr.D', NULL,       25,'CS1');
+
+-- GN1 chain: 90690001 -> 90690002 -> 90690003 + อื่น ๆ
+INSERT INTO Subjects VALUES ('90690001','GN1-Intro IT',                    3,'Prof.I', NULL,     50,'GN1');
+INSERT INTO Subjects VALUES ('90690002','GN1-Database I',                  3,'Prof.I','90690001',40,'GN1');
+INSERT INTO Subjects VALUES ('90690003','GN1-Database II',                 3,'Prof.I','90690002',30,'GN1');
+INSERT INTO Subjects VALUES ('90694000','GN1-Foundation English 1',        3,'Prof.Y', NULL,     60,'GN1');
+INSERT INTO Subjects VALUES ('90694008','GN1-Foundation English 2',        3,'Prof.Y','90694000',60,'GN1');
+INSERT INTO Subjects VALUES ('90692990','GN1-Charm School',                3,'Prof.X', NULL,     20,'GN1');
+
+-- Registrations (6 แถว ตาม DataStore) — ไม่ใส่เกรด
+INSERT INTO RegisteredSubject (student_id, subject_code, acad_year, semester) VALUES ('69000001','05506001',2024,1);
+INSERT INTO RegisteredSubject (student_id, subject_code, acad_year, semester) VALUES ('69000001','05506002',2024,2);
+INSERT INTO RegisteredSubject (student_id, subject_code, acad_year, semester) VALUES ('69000003','90690001',2024,1);
+INSERT INTO RegisteredSubject (student_id, subject_code, acad_year, semester) VALUES ('69000003','90690002',2024,2);
+INSERT INTO RegisteredSubject (student_id, subject_code, acad_year, semester) VALUES ('69000002','05506232',2024,1);
+INSERT INTO RegisteredSubject (student_id, subject_code, acad_year, semester) VALUES ('69000005','90694000',2024,1);
+
+COMMIT;
+
+
+
+
+
